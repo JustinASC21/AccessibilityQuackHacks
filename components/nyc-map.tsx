@@ -1,22 +1,79 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { SelectedLocation } from "@/components/selected-location-context";
 
 const SCRIPT_ID = "google-maps-script";
 const NYC_CENTER = { lat: 40.7128, lng: -74.006 };
 
-export function NycMap() {
+type NycMapProps = {
+  selectedLocation?: SelectedLocation | null;
+  onLocationChange?: (location: SelectedLocation) => void;
+};
+
+export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const mapElementRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const userMarkerRef = useRef<google.maps.Marker | null>(null);
-  const searchMarkerRef = useRef<google.maps.Marker | null>(null);
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
+  const autocompleteServiceRef = useRef<google.maps.places.AutocompleteService | null>(null);
 
   const [search, setSearch] = useState("");
+  const [suggestions, setSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([]);
   const [status, setStatus] = useState<string | null>(null);
+
+  const setMarkerAndCenter = useCallback((location: SelectedLocation, title: string, zoom: number) => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    map.setCenter({ lat: location.lat, lng: location.lng });
+    map.setZoom(zoom);
+
+    if (!userMarkerRef.current) {
+      userMarkerRef.current = new window.google.maps.Marker({
+        map,
+        position: location,
+        title,
+      });
+    } else {
+      userMarkerRef.current.setPosition(location);
+      userMarkerRef.current.setTitle(title);
+    }
+  }, []);
+
+  const requestLocation = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (!navigator.geolocation) {
+      setStatus("Geolocation is not supported in this browser.");
+      return;
+    }
+
+    setStatus("Requesting location access...");
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const userLocation = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+
+        setMarkerAndCenter(userLocation, "Your Location", 18);
+        onLocationChange?.({ ...userLocation, label: "Your Location" });
+        setStatus("Showing your current location.");
+      },
+      () => {
+        setStatus("Location permission denied. Showing NYC default.");
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+      },
+    );
+  }, [onLocationChange, setMarkerAndCenter]);
 
   useEffect(() => {
     if (!apiKey) {
@@ -38,6 +95,7 @@ export function NycMap() {
       });
 
       geocoderRef.current = new window.google.maps.Geocoder();
+      autocompleteServiceRef.current = new window.google.maps.places.AutocompleteService();
       requestLocation();
     };
 
@@ -56,7 +114,7 @@ export function NycMap() {
 
     const script = document.createElement("script");
     script.id = SCRIPT_ID;
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
     script.async = true;
     script.defer = true;
     script.addEventListener("load", initializeMap);
@@ -65,59 +123,25 @@ export function NycMap() {
     return () => {
       script.removeEventListener("load", initializeMap);
     };
-  }, [apiKey]);
+  }, [apiKey, requestLocation]);
 
-  const requestLocation = () => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    if (!navigator.geolocation) {
-      setStatus("Geolocation is not supported in this browser.");
+  useEffect(() => {
+    if (!selectedLocation || !mapRef.current) {
       return;
     }
 
-    setStatus("Requesting location access...");
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const userLocation = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        };
+    setMarkerAndCenter(selectedLocation, selectedLocation.label ?? "Selected Location", 14);
+  }, [selectedLocation, setMarkerAndCenter]);
 
-        if (!userMarkerRef.current) {
-          userMarkerRef.current = new window.google.maps.Marker({
-            map,
-            position: userLocation,
-            title: "Your Location",
-          });
-        } else {
-          userMarkerRef.current.setPosition(userLocation);
-        }
-
-        map.setCenter(userLocation);
-        map.setZoom(13);
-        setStatus("Showing your current location.");
-      },
-      () => {
-        setStatus("Location permission denied. Showing NYC default.");
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-      },
-    );
-  };
-
-  const handleSearch = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const applySelectedLocation = (address: string) => {
     const geocoder = geocoderRef.current;
     const map = mapRef.current;
 
-    if (!geocoder || !map || !search.trim()) {
+    if (!geocoder || !map || !address.trim()) {
       return;
     }
 
-    geocoder.geocode({ address: search.trim() }, (results, geocodeStatus) => {
+    geocoder.geocode({ address: address.trim() }, (results, geocodeStatus) => {
       if (
         geocodeStatus !== window.google.maps.GeocoderStatus.OK ||
         !results ||
@@ -128,36 +152,70 @@ export function NycMap() {
       }
 
       const location = results[0].geometry.location;
-      map.setCenter(location);
-      map.setZoom(14);
+      const nextLocation = {
+        lat: location.lat(),
+        lng: location.lng(),
+      };
 
-      if (!searchMarkerRef.current) {
-        searchMarkerRef.current = new window.google.maps.Marker({
-          map,
-          position: location,
-          title: results[0].formatted_address,
-        });
-      } else {
-        searchMarkerRef.current.setPosition(location);
-        searchMarkerRef.current.setTitle(results[0].formatted_address);
-      }
+      setMarkerAndCenter(nextLocation, "Selected Location", 14);
+      onLocationChange?.({
+        ...nextLocation,
+        label: results[0].formatted_address,
+      });
 
+      setSearch(results[0].formatted_address);
       setStatus(`Showing: ${results[0].formatted_address}`);
+      setSuggestions([]);
     });
+  };
+
+  const handleSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    applySelectedLocation(search);
+  };
+
+  const updateSuggestions = (value: string) => {
+    const autocompleteService = autocompleteServiceRef.current;
+    if (!autocompleteService || !value.trim()) {
+      setSuggestions([]);
+      return;
+    }
+
+    autocompleteService.getPlacePredictions(
+      {
+        input: value,
+        componentRestrictions: { country: "us" },
+      },
+      (predictions, predictionStatus) => {
+        if (
+          predictionStatus !== window.google.maps.places.PlacesServiceStatus.OK ||
+          !predictions
+        ) {
+          setSuggestions([]);
+          return;
+        }
+
+        setSuggestions(predictions.slice(0, 5));
+      },
+    );
   };
 
   return (
     <div className="relative h-screen w-full">
       <div ref={mapElementRef} className="h-full w-full" />
 
-      <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 p-4 md:p-6">
+      <div className="pointer-events-none absolute left-0 right-0 top-14 z-10 p-4 md:p-6">
         <form
           onSubmit={handleSearch}
           className="pointer-events-auto mx-auto flex w-full max-w-2xl gap-2 rounded-md bg-background/95 p-2 shadow"
         >
           <Input
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              const value = event.target.value;
+              setSearch(value);
+              updateSuggestions(value);
+            }}
             placeholder="Search a place"
             aria-label="Search a place"
           />
@@ -166,6 +224,21 @@ export function NycMap() {
             Use My Location
           </Button>
         </form>
+
+        {suggestions.length > 0 && (
+          <div className="pointer-events-auto mx-auto mt-2 w-full max-w-2xl overflow-hidden rounded-md border bg-background shadow">
+            {suggestions.map((prediction) => (
+              <button
+                key={prediction.place_id}
+                type="button"
+                onClick={() => applySelectedLocation(prediction.description)}
+                className="block w-full border-b px-3 py-2 text-left text-sm hover:bg-accent last:border-b-0"
+              >
+                {prediction.description}
+              </button>
+            ))}
+          </div>
+        )}
 
         {status && (
           <div className="pointer-events-auto mx-auto mt-2 w-full max-w-2xl rounded-md bg-background/95 px-3 py-2 text-sm shadow">
