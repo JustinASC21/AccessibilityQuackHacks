@@ -4,9 +4,14 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { SelectedLocation } from "@/components/selected-location-context";
+import { createClient } from "@/lib/supabase/client";
 
 const SCRIPT_ID = "google-maps-script";
 const NYC_CENTER = { lat: 40.7128, lng: -74.006 };
+const NEARBY_RADIUS_MILES = 5;
+const RESTROOM_MARKER_COLOR = "#7dd3fc";
+
+type RestroomRow = Record<string, unknown>;
 
 type NycMapProps = {
   selectedLocation?: SelectedLocation | null;
@@ -18,12 +23,71 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
   const mapElementRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const userMarkerRef = useRef<google.maps.Marker | null>(null);
+  const restroomMarkersRef = useRef<google.maps.Marker[]>([]);
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
   const autocompleteServiceRef = useRef<google.maps.places.AutocompleteService | null>(null);
 
   const [search, setSearch] = useState("");
   const [suggestions, setSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([]);
   const [status, setStatus] = useState<string | null>(null);
+
+  const getValueByKeys = useCallback((row: RestroomRow, keys: string[]) => {
+    const normalizedKeys = keys.map((key) => key.trim().toLowerCase());
+
+    for (const [rowKey, rowValue] of Object.entries(row)) {
+      if (normalizedKeys.includes(rowKey.trim().toLowerCase())) {
+        return rowValue;
+      }
+    }
+
+    return null;
+  }, []);
+
+  const getNumericValue = useCallback((row: RestroomRow, keys: string[]) => {
+    const value = getValueByKeys(row, keys);
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === "string") {
+      const cleaned = value.trim().replace(/,/g, "");
+      const parsed = Number(cleaned);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+
+    return null;
+  }, [getValueByKeys]);
+
+  const getStringValue = useCallback((row: RestroomRow, keys: string[]) => {
+    const value = getValueByKeys(row, keys);
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+
+    return null;
+  }, [getValueByKeys]);
+
+  const distanceInMiles = (a: SelectedLocation, b: SelectedLocation) => {
+    const toRadians = (value: number) => (value * Math.PI) / 180;
+    const earthRadiusMiles = 3958.8;
+    const deltaLat = toRadians(b.lat - a.lat);
+    const deltaLng = toRadians(b.lng - a.lng);
+    const lat1 = toRadians(a.lat);
+    const lat2 = toRadians(b.lat);
+
+    const haversineValue =
+      Math.sin(deltaLat / 2) ** 2 +
+      Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) ** 2;
+
+    const centralAngle = 2 * Math.atan2(Math.sqrt(haversineValue), Math.sqrt(1 - haversineValue));
+    return earthRadiusMiles * centralAngle;
+  };
+
+  const clearRestroomMarkers = useCallback(() => {
+    restroomMarkersRef.current.forEach((marker) => marker.setMap(null));
+    restroomMarkersRef.current = [];
+  }, []);
 
   const setMarkerAndCenter = useCallback((location: SelectedLocation, title: string, zoom: number) => {
     const map = mapRef.current;
@@ -44,6 +108,92 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
     }
   }, []);
 
+  const fetchNearbyRestrooms = useCallback(
+    async (origin: SelectedLocation) => {
+      const map = mapRef.current;
+      if (!map) return;
+
+      clearRestroomMarkers();
+
+      const supabase = createClient();
+      const { data, error } = await supabase.from("restrooms").select("*");
+
+      if (error) {
+        setStatus(`Could not load nearby restrooms: ${error.message}`);
+        return;
+      }
+
+      const rows = (data ?? []) as RestroomRow[];
+      const distances: number[] = [];
+
+      const nearbyRestrooms = rows
+        .map((row) => {
+          const latitude = getNumericValue(row, ["Latitude", "latitude", "Latitute"]);
+          const longitude = getNumericValue(row, ["Longitude", "longitude"]);
+
+          if (latitude === null || longitude === null) {
+            return null;
+          }
+
+          const position = { lat: latitude, lng: longitude };
+          const distance = distanceInMiles(origin, position);
+          distances.push(distance);
+          if (distance > NEARBY_RADIUS_MILES) {
+            return null;
+          }
+
+          const facilityName = getStringValue(row, ["Facility Name", "facility name", "facility_name", "name"]);
+          const facilityStatus = getStringValue(row, ["Status"]);
+          const facilityAccessibility = getStringValue(row, ["Accessibility"]);
+
+          return {
+            position,
+            facilityName,
+            facilityStatus,
+            facilityAccessibility,
+          };
+        })
+        .filter((restroom): restroom is NonNullable<typeof restroom> => restroom !== null);
+
+      nearbyRestrooms.forEach((restroom) => {
+        const marker = new window.google.maps.Marker({
+          map,
+          position: restroom.position,
+          title: restroom.facilityName,
+          icon: {
+            path: window.google.maps.SymbolPath.CIRCLE,
+            fillColor: RESTROOM_MARKER_COLOR,
+            fillOpacity: 1,
+            strokeColor: "#0f172a",
+            strokeWeight: 1,
+            scale: 15,
+          },
+        });
+
+        if (restroom.facilityStatus || restroom.facilityAccessibility) {
+          const details = [restroom.facilityStatus, restroom.facilityAccessibility]
+            .filter(Boolean)
+            .join(" • ");
+          marker.setLabel({ text: "R", color: "#0f172a", fontWeight: "700" });
+          marker.setTitle(`${restroom.facilityName}${details ? ` (${details})` : ""}`);
+        }
+
+        restroomMarkersRef.current.push(marker);
+      });
+
+      const nearestDistance = distances.length ? Math.min(...distances).toFixed(2) : null;
+
+      setStatus(
+        nearbyRestrooms.length
+          ? `Found ${nearbyRestrooms.length} restrooms within ${NEARBY_RADIUS_MILES} miles.`
+          : rows.length
+            ? `Loaded ${rows.length} restrooms, but none within ${NEARBY_RADIUS_MILES} miles${nearestDistance ? ` (nearest: ${nearestDistance} miles)` : ""}.`
+            : "Loaded 0 restrooms from Supabase.",
+      );
+    },
+    [clearRestroomMarkers, getNumericValue, getStringValue],
+  );
+
   const requestLocation = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -63,7 +213,9 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
 
         setMarkerAndCenter(userLocation, "Your Location", 18);
         onLocationChange?.({ ...userLocation, label: "Your Location" });
-        setStatus("Showing your current location.");
+        setStatus("Showing your current location. Loading nearby restrooms...");
+        setSearch("");
+        void fetchNearbyRestrooms(userLocation);
       },
       () => {
         setStatus("Location permission denied. Showing NYC default.");
@@ -73,7 +225,7 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
         timeout: 10000,
       },
     );
-  }, [onLocationChange, setMarkerAndCenter]);
+  }, [fetchNearbyRestrooms, onLocationChange, setMarkerAndCenter]);
 
   useEffect(() => {
     if (!apiKey) {
@@ -164,8 +316,9 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
       });
 
       setSearch(results[0].formatted_address);
-      setStatus(`Showing: ${results[0].formatted_address}`);
+      setStatus(`Showing: ${results[0].formatted_address}. Loading nearby restrooms...`);
       setSuggestions([]);
+      void fetchNearbyRestrooms(nextLocation);
     });
   };
 
