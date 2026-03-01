@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-// ─── Hardcoded Reviews ────────────────────────────────────────────────────────
+const LOCATION_REVIEWS_STORAGE_KEY = "location-reviews-v1";
+
+// ─── Hardcoded Reviews ───────────────────────────────────────────────────────
 const REVIEWS = [
   {
     id: 1,
@@ -61,7 +63,25 @@ const REVIEWS = [
   },
 ];
 
-// ─── Star display ─────────────────────────────────────────────────────────────
+// ─── Types ──────────────────────────────────────────────────────────────────
+type ReviewCard = {
+  id: number;
+  author: string;
+  avatar: string;
+  date: string;
+  comfort: number;
+  stars: number;
+  comment: string;
+  tags: string[];
+};
+
+type StoredReview = {
+  id: number;
+  text: string;
+  createdAt: string;
+};
+
+// ─── Star display ────────────────────────────────────────────────────────────
 function Stars({ count, max = 5 }: { count: number; max?: number }) {
   return (
     <div className="flex gap-0.5">
@@ -97,38 +117,53 @@ function ComfortBadge({ score }: { score: number }) {
   );
 }
 
-// ─── Average stars ────────────────────────────────────────────────────────────
-function avgStars() {
-  return (REVIEWS.reduce((s, r) => s + r.stars, 0) / REVIEWS.length).toFixed(1);
-}
-function avgComfort() {
-  return (REVIEWS.reduce((s, r) => s + r.comfort, 0) / REVIEWS.length).toFixed(1);
+// ─── Status Badge ─────────────────────────────────────────────────────────────
+function StatusBadge({ status }: { status: string }) {
+  const colors =
+    status === "Resolved"
+      ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800"
+      : status === "In Review"
+        ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800"
+        : "bg-zinc-100 text-zinc-500 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700";
+
+  return (
+    <span className={`text-[10px] font-semibold border rounded-full px-2 py-0.5 ${colors}`}>
+      {status}
+    </span>
+  );
 }
 
-// ─── Reviews Tab ─────────────────────────────────────────────────────────────
-function ReviewsTab() {
+// ─── Average helpers ──────────────────────────────────────────────────────────
+function avgStars(reviews: ReviewCard[]) {
+  if (!reviews.length) return "0.0";
+  return (reviews.reduce((sum, review) => sum + review.stars, 0) / reviews.length).toFixed(1);
+}
+function avgComfort(reviews: ReviewCard[]) {
+  if (!reviews.length) return "0.0";
+  return (reviews.reduce((sum, review) => sum + review.comfort, 0) / reviews.length).toFixed(1);
+}
+
+// ─── Reviews Tab ──────────────────────────────────────────────────────────────
+function ReviewsTab({ reviews }: { reviews: ReviewCard[] }) {
   return (
     <div className="flex flex-col gap-0">
-      {/* Summary strip */}
       <div className="flex items-center gap-6 px-5 py-4 bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-100 dark:border-zinc-800">
         <div className="text-center">
-          <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 leading-none">{avgStars()}</p>
-          <Stars count={Math.round(Number(avgStars()))} />
-          <p className="text-[10px] text-zinc-400 mt-0.5">{REVIEWS.length} reviews</p>
+          <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 leading-none">{avgStars(reviews)}</p>
+          <Stars count={Math.round(Number(avgStars(reviews)))} />
+          <p className="text-[10px] text-zinc-400 mt-0.5">{reviews.length} reviews</p>
         </div>
         <div className="w-px h-10 bg-zinc-200 dark:bg-zinc-700" />
         <div className="text-center">
-          <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 leading-none">{avgComfort()}</p>
+          <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 leading-none">{avgComfort(reviews)}</p>
           <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1">avg comfort</p>
           <p className="text-[10px] text-zinc-400">out of 5</p>
         </div>
       </div>
 
-      {/* Review cards */}
       <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-        {REVIEWS.map((review) => (
+        {reviews.map((review) => (
           <div key={review.id} className="px-5 py-4">
-            {/* Row 1: avatar + name + date */}
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-full bg-sky-100 dark:bg-sky-900 text-sky-700 dark:text-sky-300 text-xs font-bold flex items-center justify-center shrink-0">
@@ -143,16 +178,10 @@ function ReviewsTab() {
               </div>
               <ComfortBadge score={review.comfort} />
             </div>
-
-            {/* Row 2: stars */}
             <Stars count={review.stars} />
-
-            {/* Row 3: comment */}
             <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300 leading-relaxed">
               {review.comment}
             </p>
-
-            {/* Row 4: tags */}
             <div className="flex flex-wrap gap-1.5 mt-2.5">
               {review.tags.map((tag) => (
                 <span
@@ -170,29 +199,182 @@ function ReviewsTab() {
   );
 }
 
-// ─── Add Review Tab (placeholder) ────────────────────────────────────────────
-function AddReviewTab() {
+// ─── Add Review Tab ───────────────────────────────────────────────────────────
+function AddReviewTab({
+  reviewText,
+  onReviewTextChange,
+  onAddReview,
+}: {
+  reviewText: string;
+  onReviewTextChange: (next: string) => void;
+  onAddReview: () => void;
+}) {
   return (
-    <div className="flex flex-col items-center justify-center h-48 gap-3 text-zinc-400 dark:text-zinc-600">
-      <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-      </svg>
-      <p className="text-sm">Coming soon</p>
+    <div className="p-4 flex flex-col gap-3">
+      <textarea
+        value={reviewText}
+        onChange={(event) => onReviewTextChange(event.target.value)}
+        placeholder="Write your review..."
+        className="w-full min-h-28 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 text-sm outline-none focus:ring-2 focus:ring-sky-400"
+      />
+      <button
+        type="button"
+        onClick={onAddReview}
+        disabled={!reviewText.trim()}
+        className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40"
+      >
+        Add Review
+      </button>
     </div>
   );
 }
 
-// ─── Service Request Tab (placeholder) ───────────────────────────────────────
+// ─── Service Request Tab ──────────────────────────────────────────────────────
+interface ServiceRequest {
+  id: number;
+  issueType: string;
+  description: string;
+  date: string;
+  status: string;
+}
+
 function ServiceRequestTab() {
+  const [issueType, setIssueType] = useState("");
+  const [description, setDescription] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const [showPast, setShowPast] = useState(false);
+  const [requests, setRequests] = useState<ServiceRequest[]>([]);
+
+  const handleSubmit = () => {
+    if (!issueType) return;
+    const newRequest: ServiceRequest = {
+      id: Date.now(),
+      issueType,
+      description,
+      date: new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" }),
+      status: "Pending",
+    };
+    setRequests((prev) => [newRequest, ...prev]);
+    setSubmitted(true);
+  };
+
+  if (submitted) {
+    return (
+      <div className="flex flex-col items-center justify-center h-48 gap-3 px-5">
+        <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+          <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">Request submitted!</p>
+        <p className="text-xs text-zinc-400 text-center">
+          Thank you for helping improve accessibility in NYC.
+        </p>
+        <button
+          onClick={() => {
+            setSubmitted(false);
+            setIssueType("");
+            setDescription("");
+          }}
+          className="text-xs text-sky-600 hover:underline mt-1"
+        >
+          Submit another
+        </button>
+      </div>
+    );
+  }
+
+  if (showPast) {
+    return (
+      <div className="flex flex-col">
+        <div className="flex items-center gap-2 px-5 py-3 border-b border-zinc-100 dark:border-zinc-800">
+          <button
+            onClick={() => setShowPast(false)}
+            className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">Submitted Requests</p>
+        </div>
+
+        {requests.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-36 gap-2 text-zinc-400 dark:text-zinc-600">
+            <p className="text-sm">No requests submitted yet.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+            {requests.map((req) => (
+              <div key={req.id} className="px-5 py-4">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">{req.issueType}</p>
+                  <StatusBadge status={req.status} />
+                </div>
+                {req.description && (
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                    {req.description}
+                  </p>
+                )}
+                <p className="text-[10px] text-zinc-400 mt-1.5">{req.date}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col items-center justify-center h-48 gap-3 text-zinc-400 dark:text-zinc-600">
-      <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-          d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-      </svg>
-      <p className="text-sm">Coming soon</p>
+    <div className="flex flex-col gap-4 px-5 py-4">
+      <div>
+        <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mb-1">
+          Issue Type
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {["Broken Ramp", "Elevator Down", "Blocked Access", "Poor Lighting", "Other"].map((type) => (
+            <button
+              key={type}
+              onClick={() => setIssueType(type)}
+              className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                issueType === type
+                  ? "bg-sky-500 border-sky-500 text-white"
+                  : "border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:border-sky-300"
+              }`}
+            >
+              {type}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mb-1">
+          Description
+        </p>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Describe the issue..."
+          rows={3}
+          className="w-full text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100 placeholder-zinc-400 px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-sky-400"
+        />
+      </div>
+
+      <button
+        onClick={handleSubmit}
+        disabled={!issueType}
+        className="w-full py-2.5 rounded-xl text-sm font-semibold bg-sky-500 text-white hover:bg-sky-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      >
+        Submit Request
+      </button>
+
+      <button
+        onClick={() => setShowPast(true)}
+        className="w-full py-2.5 rounded-xl text-sm font-semibold border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:border-zinc-400 transition-colors"
+      >
+        Submitted Requests {requests.length > 0 && `(${requests.length})`}
+      </button>
     </div>
   );
 }
@@ -212,6 +394,59 @@ export function LocationDetailPanel({
   onClose,
 }: LocationDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>("reviews");
+  const [reviewText, setReviewText] = useState("");
+  const [reviewsByLocation, setReviewsByLocation] = useState<Record<string, StoredReview[]>>({});
+
+  const locationKey = `${locationName}__${address}`;
+
+  useEffect(() => {
+    try {
+      const stored = window.sessionStorage.getItem(LOCATION_REVIEWS_STORAGE_KEY);
+      if (!stored) return;
+      setReviewsByLocation(JSON.parse(stored) as Record<string, StoredReview[]>);
+    } catch {
+      setReviewsByLocation({});
+    }
+  }, []);
+
+  const locationStoredReviews = reviewsByLocation[locationKey] ?? [];
+
+  const mergedReviews: ReviewCard[] = [
+    ...REVIEWS,
+    ...locationStoredReviews.map((review) => ({
+      id: review.id,
+      author: "You",
+      avatar: "Y",
+      date: new Date(review.createdAt).toLocaleDateString(undefined, {
+        month: "short",
+        year: "numeric",
+      }),
+      comfort: 4,
+      stars: 4,
+      comment: review.text,
+      tags: ["User Review"],
+    })),
+  ];
+
+  const addReview = () => {
+    if (!reviewText.trim()) return;
+
+    const newReview: StoredReview = {
+      id: Date.now(),
+      text: reviewText.trim(),
+      createdAt: new Date().toISOString(),
+    };
+
+    const next = {
+      ...reviewsByLocation,
+      [locationKey]: [...locationStoredReviews, newReview],
+    };
+
+    setReviewsByLocation(next);
+    window.sessionStorage.setItem(LOCATION_REVIEWS_STORAGE_KEY, JSON.stringify(next));
+    setReviewText("");
+    setActiveTab("reviews");
+  };
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "reviews", label: "Reviews" },
@@ -221,17 +456,24 @@ export function LocationDetailPanel({
 
   return (
     <div className="absolute bottom-4 right-4 w-[340px] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl overflow-hidden z-50 flex flex-col max-h-[560px]">
-      {/* ── Header ── */}
+      {/* Header */}
       <div className="px-5 pt-4 pb-3 border-b border-zinc-100 dark:border-zinc-800">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3 min-w-0">
-            {/* Icon */}
             <div className="w-9 h-9 rounded-xl bg-sky-500 flex items-center justify-center shrink-0 mt-0.5">
               <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                />
               </svg>
             </div>
             <div className="min-w-0">
@@ -241,7 +483,6 @@ export function LocationDetailPanel({
               <p className="text-xs text-zinc-400 mt-0.5 leading-snug line-clamp-1">{address}</p>
             </div>
           </div>
-          {/* Close */}
           {onClose && (
             <button
               onClick={onClose}
@@ -255,7 +496,7 @@ export function LocationDetailPanel({
         </div>
       </div>
 
-      {/* ── Tabs ── */}
+      {/* Tabs */}
       <div className="flex border-b border-zinc-100 dark:border-zinc-800 shrink-0">
         {tabs.map((tab) => (
           <button
@@ -275,10 +516,16 @@ export function LocationDetailPanel({
         ))}
       </div>
 
-      {/* ── Content ── */}
+      {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        {activeTab === "reviews" && <ReviewsTab />}
-        {activeTab === "add-review" && <AddReviewTab />}
+        {activeTab === "reviews" && <ReviewsTab reviews={mergedReviews} />}
+        {activeTab === "add-review" && (
+          <AddReviewTab
+            reviewText={reviewText}
+            onReviewTextChange={setReviewText}
+            onAddReview={addReview}
+          />
+        )}
         {activeTab === "service-request" && <ServiceRequestTab />}
       </div>
     </div>

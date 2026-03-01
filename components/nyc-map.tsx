@@ -13,8 +13,60 @@ const SCRIPT_ID = "google-maps-script";
 const NYC_CENTER = { lat: 40.7128, lng: -74.006 };
 const NEARBY_RADIUS_MILES = 5;
 const RESTROOM_MARKER_COLOR = "#7dd3fc";
+const MAP_STYLES: google.maps.MapTypeStyle[] = [
+  {
+    "featureType": "water",
+    "elementType": "geometry",
+    "stylers": [{ "color": "#75cff0" }]
+  },
+  {
+    "featureType": "landscape",
+    "elementType": "geometry",
+    "stylers": [{ "color": "#f5f5f5" }]
+  },
+  {
+    "featureType": "poi.park",
+    "elementType": "geometry",
+    "stylers": [{ "color": "#d0e0d0" }] 
+  },
+  {
+    "featureType": "road.highway",
+    "elementType": "geometry",
+    "stylers": [{ "color": "#ff9e67" }]
+  },
+  {
+    "featureType": "road.arterial",
+    "elementType": "geometry",
+    "stylers": [{ "color": "#ffffff" }]
+  },
+  {
+    "featureType": "road.local",
+    "elementType": "geometry",
+    "stylers": [{ "color": "#ffffff" }]
+  },
+  {
+    "featureType": "transit",
+    "stylers": [{ "visibility": "off" }]
+  },
+  {
+    "featureType": "administrative",
+    "elementType": "labels.text.fill",
+    "stylers": [{ "color": "#444444" }]
+  },
+  {
+    "featureType": "poi",
+    "stylers": [{ "visibility": "off" }]
+  }
+];
 
 type RestroomRow = Record<string, unknown>;
+
+type NearbyRestroom = {
+  position: { lat: number; lng: number };
+  facilityName: string;
+  facilityStatus: string | null;
+  facilityAccessibility: string | null;
+};
 
 type NycMapProps = {
   selectedLocation?: SelectedLocation | null;
@@ -38,6 +90,8 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
   const [search, setSearch] = useState("");
   const [suggestions, setSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([]);
   const [status, setStatus] = useState<string | null>(null);
+  const [nearbyRestrooms, setNearbyRestrooms] = useState<NearbyRestroom[]>([]);
+  const [isRestroomListOpen, setIsRestroomListOpen] = useState(false);
 
   // ── Panel state ──────────────────────────────────────────────────────────────
   const [openPanel, setOpenPanel] = useState<OpenPanel>(null);
@@ -119,6 +173,8 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
       const { data, error } = await supabase.from("restrooms").select("*");
 
       if (error) {
+        setNearbyRestrooms([]);
+        setIsRestroomListOpen(false);
         setStatus(`Could not load nearby restrooms: ${error.message}`);
         return;
       }
@@ -146,9 +202,17 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
           const facilityStatus = getStringValue(row, ["Status"]);
           const facilityAccessibility = getStringValue(row, ["Accessibility"]);
 
-          return { position, facilityName, facilityStatus, facilityAccessibility };
+          return {
+            position,
+            facilityName: facilityName ?? "Restroom",
+            facilityStatus,
+            facilityAccessibility,
+          };
         })
         .filter((r): r is NonNullable<typeof r> => r !== null);
+
+      setNearbyRestrooms(nearbyRestrooms);
+      setIsRestroomListOpen(false);
 
       nearbyRestrooms.forEach((restroom) => {
         const marker = new window.google.maps.Marker({
@@ -188,7 +252,7 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
       const nearestDistance = distances.length ? Math.min(...distances).toFixed(2) : null;
       setStatus(
         nearbyRestrooms.length
-          ? `Found ${nearbyRestrooms.length} restrooms within ${NEARBY_RADIUS_MILES} miles.`
+          ? `Found ${nearbyRestrooms.length} restrooms within ${NEARBY_RADIUS_MILES} miles. Click to show/hide.`
           : rows.length
             ? `Loaded ${rows.length} restrooms, but none within ${NEARBY_RADIUS_MILES} miles${nearestDistance ? ` (nearest: ${nearestDistance} miles)` : ""}.`
             : "Loaded 0 restrooms from Supabase.",
@@ -250,6 +314,7 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
         fullscreenControl: false,
         streetViewControl: false,
         mapTypeControl: false,
+        styles: MAP_STYLES,
       });
 
       geocoderRef.current = new window.google.maps.Geocoder();
@@ -384,8 +449,30 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
         )}
 
         {status && (
-          <div className="pointer-events-auto mx-auto mt-2 w-full max-w-2xl rounded-md bg-background/95 px-3 py-2 text-sm shadow">
+          <button
+            type="button"
+            onClick={() => {
+              if (nearbyRestrooms.length > 0) {
+                setIsRestroomListOpen((previous) => !previous);
+              }
+            }}
+            className="pointer-events-auto mx-auto mt-2 block w-full max-w-2xl rounded-md bg-background/95 px-3 py-2 text-left text-sm shadow"
+          >
             {status}
+          </button>
+        )}
+
+        {isRestroomListOpen && nearbyRestrooms.length > 0 && (
+          <div className="pointer-events-auto mx-auto mt-2 max-h-64 w-full max-w-2xl overflow-y-auto rounded-md bg-background/95 p-3 text-sm shadow">
+            <ul className="space-y-2">
+              {nearbyRestrooms.map((restroom, index) => (
+                <li key={`${restroom.facilityName}-${index}`} className="rounded border px-3 py-2">
+                  <p className="font-medium">{restroom.facilityName}</p>
+                  <p>Status: {restroom.facilityStatus ?? "Unknown"}</p>
+                  <p>Accessibility: {restroom.facilityAccessibility ?? "Unknown"}</p>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </div>
