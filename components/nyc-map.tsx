@@ -4,8 +4,10 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { SelectedLocation } from "@/components/selected-location-context";
+import { useSelectedLocation } from "@/components/selected-location-context";
 import { createClient } from "@/lib/supabase/client";
 import { LocationDetailPanel } from "@/components/location-detail-panel";
+import FilterWrapper from "./filter-wrapper";
 
 const SCRIPT_ID = "google-maps-script";
 const NYC_CENTER = { lat: 40.7128, lng: -74.006 };
@@ -39,6 +41,10 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
 
   // ── Panel state ──────────────────────────────────────────────────────────────
   const [openPanel, setOpenPanel] = useState<OpenPanel>(null);
+
+  // ── Filters ─────────────────────────────────────────────────────────────────
+  const { selectedFilters } = useSelectedLocation();
+  const showBathrooms = selectedFilters.includes("Bathrooms");
 
   const getValueByKeys = useCallback((row: RestroomRow, keys: string[]) => {
     const normalizedKeys = keys.map((key) => key.trim().toLowerCase());
@@ -209,14 +215,25 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
         };
         setMarkerAndCenter(userLocation, "Your Location", 18);
         onLocationChange?.({ ...userLocation, label: "Your Location" });
-        setStatus("Showing your current location. Loading nearby restrooms...");
+        setStatus("Showing your current location.");
         setSearch("");
-        void fetchNearbyRestrooms(userLocation);
+        if (showBathrooms) void fetchNearbyRestrooms(userLocation);
       },
       () => setStatus("Location permission denied. Showing NYC default."),
       { enableHighAccuracy: true, timeout: 10000 },
     );
-  }, [fetchNearbyRestrooms, onLocationChange, setMarkerAndCenter]);
+  }, [fetchNearbyRestrooms, onLocationChange, setMarkerAndCenter, showBathrooms]);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+    if (showBathrooms) {
+      const pos = userMarkerRef.current?.getPosition();
+      if (pos) void fetchNearbyRestrooms({ lat: pos.lat(), lng: pos.lng() });
+    } else {
+      clearRestroomMarkers();
+      setStatus(null);
+    }
+  }, [showBathrooms, fetchNearbyRestrooms, clearRestroomMarkers]);
 
   useEffect(() => {
     if (!apiKey) {
@@ -285,9 +302,13 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
       setMarkerAndCenter(nextLocation, "Selected Location", 14);
       onLocationChange?.({ ...nextLocation, label: results[0].formatted_address });
       setSearch(results[0].formatted_address);
-      setStatus(`Showing: ${results[0].formatted_address}. Loading nearby restrooms...`);
       setSuggestions([]);
-      void fetchNearbyRestrooms(nextLocation);
+      if (showBathrooms) {
+        setStatus(`Showing: ${results[0].formatted_address}. Loading nearby restrooms...`);
+        void fetchNearbyRestrooms(nextLocation);
+      } else {
+        setStatus(`Showing: ${results[0].formatted_address}.`);
+      }
     });
   };
 
@@ -342,6 +363,9 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
           <Button type="button" variant="outline" onClick={requestLocation}>
             Use My Location
           </Button>
+          <div className="flex-shrink-0">
+            <FilterWrapper />
+          </div>
         </form>
 
         {suggestions.length > 0 && (
