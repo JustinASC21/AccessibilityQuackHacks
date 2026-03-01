@@ -40,7 +40,7 @@ export default function Filter({ options, value, onChange }: Props) {
         aria-expanded={open}
         className="w-full flex items-center justify-between border border-gray-300 rounded-lg px-3 py-2 bg-white text-sm text-left hover:border-gray-400 transition-colors min-h-[38px]"
       >
-        <span className={value.length > 0 ? "text-gray-700" : "text-gray-400"}>
+        <span className={value.length > 0 ? "text-gray-700 text-md" : "text-gray-400"}>
           {value.length > 0 ? `${value.length} selected` : "Search Accessible"}
         </span>
         <svg

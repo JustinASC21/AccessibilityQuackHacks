@@ -11,7 +11,7 @@ import FilterWrapper from "./filter-wrapper";
 
 const SCRIPT_ID = "google-maps-script";
 const NYC_CENTER = { lat: 40.7128, lng: -74.006 };
-const NEARBY_RADIUS_MILES = 5;
+const DEFAULT_NEARBY_RADIUS_MILES = 5;
 
 
 
@@ -76,6 +76,7 @@ type NearbyPedestrianSignal = {
   boroName: string | null;
   locationText: string;
   position: { lat: number; lng: number };
+  distance: number;
 };
 
 type NycMapProps = {
@@ -86,6 +87,7 @@ type NycMapProps = {
 type OpenPanel = {
   name: string;
   address: string;
+  distance: number;
 } | null;
 
 export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
@@ -107,6 +109,7 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
   const [nearbyRestrooms, setNearbyRestrooms] = useState<NearbyRestroom[]>([]);
   const [nearbyPedestrianSignals, setNearbyPedestrianSignals] = useState<NearbyPedestrianSignal[]>([]);
   const [isRestroomListOpen, setIsRestroomListOpen] = useState(false);
+  const [radiusMiles, setRadiusMiles] = useState(DEFAULT_NEARBY_RADIUS_MILES);
 
   // ── Panel state ──────────────────────────────────────────────────────────────
   const [openPanel, setOpenPanel] = useState<OpenPanel>(null);
@@ -263,7 +266,7 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
           const position = { lat: latitude, lng: longitude };
           const distance = distanceInMiles(origin, position);
           distances.push(distance);
-          if (distance > NEARBY_RADIUS_MILES) return null;
+          if (distance > radiusMiles) return null;
 
           const facilityName = getStringValue(row, [
             "Facility Name",
@@ -279,6 +282,7 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
             facilityName: facilityName ?? "Restroom",
             facilityStatus,
             facilityAccessibility,
+            distance
           };
         })
         .filter((r): r is NonNullable<typeof r> => r !== null);
@@ -331,6 +335,7 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
           setOpenPanel({
             name: restroom.facilityName ?? "Public Restroom",
             address: details || "New York, NY",
+            distance: restroom.distance
           });
 
            // reset previous selected marker
@@ -357,13 +362,13 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
       const nearestDistance = distances.length ? Math.min(...distances).toFixed(2) : null;
       setStatus(
         nearbyRestrooms.length
-          ? `Found ${nearbyRestrooms.length} restrooms within ${NEARBY_RADIUS_MILES} miles. Click to show/hide.`
+          ? `Found ${nearbyRestrooms.length} restrooms within ${radiusMiles} miles. Click to show/hide.`
           : rows.length
-            ? `Loaded ${rows.length} restrooms, but none within ${NEARBY_RADIUS_MILES} miles${nearestDistance ? ` (nearest: ${nearestDistance} miles)` : ""}.`
+            ? `Loaded ${rows.length} restrooms, but none within ${radiusMiles} miles${nearestDistance ? ` (nearest: ${nearestDistance} miles)` : ""}.`
             : "Loaded 0 restrooms from Supabase.",
       );
     },
-    [centerLocationOnLeftSide, clearRestroomMarkers, getNumericValue, getStringValue],
+    [centerLocationOnLeftSide, clearRestroomMarkers, getNumericValue, getStringValue, radiusMiles],
   );
 
   useEffect(() => {
@@ -439,11 +444,11 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
         const position = { lat: latFromRow, lng: lngFromRow };
 
         const distance = distanceInMiles(origin, position);
-        if (distance > NEARBY_RADIUS_MILES) {
+        if (distance > radiusMiles) {
           continue;
         }
 
-        nearbySignals.push({ boroName, locationText, position });
+        nearbySignals.push({ boroName, locationText, position, distance});
       }
 
       setNearbyPedestrianSignals(nearbySignals);
@@ -484,10 +489,9 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
           }
 
           setOpenPanel({
-            name: "Pedestrian Signal",
-            address: signal.boroName
-              ? `${signal.locationText}, ${signal.boroName}`
-              : signal.locationText,
+            name: signal.locationText,
+            address: "Accessible Pedestrian Signal",
+            distance: signal.distance
           });
           // reset previous selected marker
           if (selectedCrosswalkMarkerRef.current) {
@@ -513,8 +517,8 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
       if (!showBathrooms) {
         setStatus(
           nearbySignals.length
-            ? `Found ${nearbySignals.length} crosswalk signals within ${NEARBY_RADIUS_MILES} miles.`
-            : `No crosswalk signals found within ${NEARBY_RADIUS_MILES} miles.`,
+            ? `Found ${nearbySignals.length} crosswalk signals within ${radiusMiles} miles.`
+            : `No crosswalk signals found within ${radiusMiles} miles.`,
         );
       }
     },
@@ -525,6 +529,7 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
       getNumericValue,
       getStringValue,
       persistPedestrianSignalsRows,
+      radiusMiles,
       showBathrooms,
     ],
   );
@@ -729,25 +734,43 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
       <div className="pointer-events-none w-[50em] absolute left-0 right-0 top-14 z-10 p-4 md:p-6">
         <form
           onSubmit={handleSearch}
-          className="pointer-events-auto mr-auto flex w-full gap-2 rounded-md bg-background/95 sm:flex-col md:flex-row p-2 shadow"
+          className="pointer-events-auto mr-auto flex w-full flex-col gap-2 rounded-md bg-background/95 p-2 shadow"
         >
-          <Input
-            value={search}
-            onChange={(event) => {
-              const value = event.target.value;
-              setSearch(value);
-              updateSuggestions(value);
-            }}
-            placeholder="Search a place"
-            aria-label="Search a place"
-            className="text-md"
-          />
-          <Button type="submit" className = "text-lg">Search</Button>
-          <Button type="button" className = "text-lg" variant="outline" onClick={requestLocation}>
-            Use My Location
-          </Button>
-          <div className="flex-shrink-0">
-            <FilterWrapper />
+          <div className="flex w-full gap-2 sm:flex-col md:flex-row">
+            <Input
+              value={search}
+              onChange={(event) => {
+                const value = event.target.value;
+                setSearch(value);
+                updateSuggestions(value);
+              }}
+              placeholder="Search a place"
+              aria-label="Search a place"
+              className="text-md"
+            />
+            <Button type="submit" className = "text-lg">Search</Button>
+            <Button type="button" className = "text-lg" variant="outline" onClick={requestLocation}>
+              Use My Location
+            </Button>
+            <div className="flex-shrink-0">
+              <FilterWrapper />
+            </div>
+          </div>
+
+          <div className="flex w-full items-center gap-2 rounded-md border bg-background px-3 py-2">
+            <label htmlFor="radius-miles" className="text-lg whitespace-nowrap">
+              Radius: {radiusMiles} mi
+            </label>
+            <input
+              id="radius-miles"
+              type="range"
+              min={1}
+              max={10}
+              step={1}
+              value={radiusMiles}
+              onChange={(event) => setRadiusMiles(Number(event.target.value))}
+              className="w-full"
+            />
           </div>
         </form>
 
@@ -800,6 +823,7 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
         <LocationDetailPanel
           locationName={openPanel.name}
           address={openPanel.address}
+          distance={openPanel.distance}
           onClose={() => setOpenPanel(null)}
         />
       )}
