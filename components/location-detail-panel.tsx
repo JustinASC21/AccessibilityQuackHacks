@@ -455,7 +455,7 @@ export function LocationDetailPanel({
 
   return (
     <div
-      className={`absolute right-4 top-20 bottom-4 z-50 flex w-[min(92vw,640px)] flex-col gap-3 transition-all duration-700 ease-out ${
+      className={`absolute right-4 top-20 bottom-4 z-50 flex w-[min(92vw,40%)] flex-col gap-3 transition-all duration-700 ease-out ${
         isPanelVisible ? "translate-x-0 opacity-100" : "translate-x-8 opacity-0"
       }`}
     >

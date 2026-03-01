@@ -726,10 +726,10 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
       <div ref={mapElementRef} className="h-full w-full" />
 
       {/* Search bar */}
-      <div className="pointer-events-none w-full absolute left-0 right-0 top-14 z-10 p-4 md:p-6">
+      <div className="pointer-events-none w-[50em] absolute left-0 right-0 top-14 z-10 p-4 md:p-6">
         <form
           onSubmit={handleSearch}
-          className="pointer-events-auto mr-auto flex w-full max-w-3xl gap-2 rounded-md bg-background/95 p-2 shadow"
+          className="pointer-events-auto mr-auto flex w-full gap-2 rounded-md bg-background/95 sm:flex-col md:flex-row p-2 shadow"
         >
           <Input
             value={search}
