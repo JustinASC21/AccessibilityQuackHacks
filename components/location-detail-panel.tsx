@@ -372,20 +372,17 @@ type Tab = "reviews" | "add-review" | "service-request";
 interface LocationDetailPanelProps {
   locationName?: string;
   address?: string;
+  distance: number;
   onClose?: () => void;
 }
 
-export function LocationDetailPanel({
-  locationName = "Public Restroom",
-  address = "123 W 34th St, New York, NY 10001",
-  onClose,
-}: LocationDetailPanelProps) {
+export function LocationDetailPanel(props : LocationDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>("reviews");
   const [reviewText, setReviewText] = useState("");
   const [reviewsByLocation, setReviewsByLocation] = useState<Record<string, StoredReview[]>>({});
   const [isPanelVisible, setIsPanelVisible] = useState(false);
 
-  const locationKey = `${locationName}__${address}`;
+  const locationKey = `${props.locationName}__${props.address}`;
 
   useEffect(() => {
     try {
@@ -503,15 +500,17 @@ export function LocationDetailPanel({
                 </svg>
               </div>
               <div className="min-w-0">
-                <h2 className="font-bold text-[30px] text-zinc-900 dark:text-zinc-50 leading-tight truncate">
-                  {locationName}
+                <h2 className="font-bold text-[30px] text-wrap text-zinc-900 dark:text-zinc-50 leading-tight truncate">
+                  {props.locationName}
                 </h2>
-                <p className="text-lg text-zinc-400 mt-0.5 leading-snug line-clamp-1">{address}</p>
+                <p className="text-lg text-blue-400 mt-0.5 leading-snug line-clamp-1">{props.address}</p>
+                <p className="text-lg text-blue-400 mt-0.5 leading-snug line-clamp-1">{props.distance.toFixed(2)} miles away</p>
+
               </div>
             </div>
-            {onClose && (
+            {props.onClose && (
               <button
-                onClick={onClose}
+                onClick={props.onClose}
                 className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
