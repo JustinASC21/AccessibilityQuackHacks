@@ -455,13 +455,13 @@ export function LocationDetailPanel({
 
   return (
     <div
-      className={`absolute bottom-4 right-4 z-50 flex flex-col items-end gap-3 transition-all duration-700 ease-out ${
+      className={`absolute right-4 top-20 bottom-4 z-50 flex w-[min(92vw,640px)] flex-col gap-3 transition-all duration-700 ease-out ${
         isPanelVisible ? "translate-x-0 opacity-100" : "translate-x-8 opacity-0"
       }`}
     >
-      <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 shadow-2xl px-4 py-3">
+      <div className="flex justify-center w-full shrink-0 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 shadow-2xl px-4 py-3">
         <div className="flex items-center gap-3">
-          <div className="w-32 h-24 rounded-full border-4 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 flex flex-col items-center justify-center">
+          <div className="h-[min(24vw,6rem)] w-[min(38vw,8rem)] rounded-full border-4 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 flex flex-col items-center justify-center">
             <p className="text-3xl font-extrabold text-amber-600 dark:text-amber-400 leading-none">
               {averageStars}
             </p>
@@ -470,7 +470,7 @@ export function LocationDetailPanel({
             </p>
           </div>
 
-          <div className="w-32 h-24 rounded-full border-4 border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-900/20 flex flex-col items-center justify-center">
+          <div className="h-[min(24vw,6rem)] w-[min(38vw,8rem)] rounded-full border-4 border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-900/20 flex flex-col items-center justify-center">
             <p className="text-3xl font-extrabold text-sky-600 dark:text-sky-400 leading-none">
               {averageComfort}
             </p>
@@ -481,7 +481,7 @@ export function LocationDetailPanel({
         </div>
       </div>
 
-      <div className="w-[640px] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[560px]">
+      <div className="w-full min-h-0 flex-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
         {/* Header */}
         <div className="px-5 pt-4 pb-3 border-b border-zinc-100 dark:border-zinc-800">
           <div className="flex items-start justify-between gap-3">
