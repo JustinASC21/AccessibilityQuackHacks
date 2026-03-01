@@ -140,6 +140,9 @@ If any API keys are ever pushed to version control or shared publicly:
 3. **Update** `.env.local` with the new key
 4. Consider using [git-secrets](https://github.com/awslabs/git-secrets) or similar tools to prevent future leaks
 
+## Artificial Intelligence Use
+Artifical Intelligence was used to prepare frontend templates.
+
 ## License
 
 Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
