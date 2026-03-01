@@ -56,7 +56,7 @@ export default function Filter({ options, value, onChange }: Props) {
           {value.length > 0 && (
             <div className="flex flex-wrap gap-1.5 p-2.5 border-b border-gray-100">
               {value.map((v) => (
-                <span key={v} className="inline-flex items-center gap-1 bg-gray-900 text-white text-xs font-medium rounded-full px-2.5 py-1">
+                <span key={v} className="inline-flex items-center gap-1 bg-gray-900 text-white text-md font-medium rounded-full px-2.5 py-1">
                   {v}
                   <button
                     onClick={(e) => remove(e, v)}
@@ -75,7 +75,7 @@ export default function Filter({ options, value, onChange }: Props) {
                 key={opt}
                 role="option"
                 aria-selected={value.includes(opt)}
-                className="flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-gray-50 cursor-pointer text-sm text-gray-700"
+                className="flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-gray-50 cursor-pointer text-md text-gray-700"
               >
                 <input
                   type="checkbox"
