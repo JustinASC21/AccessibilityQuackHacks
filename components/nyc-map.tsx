@@ -11,7 +11,8 @@ import FilterWrapper from "./filter-wrapper";
 
 const SCRIPT_ID = "google-maps-script";
 const NYC_CENTER = { lat: 40.7128, lng: -74.006 };
-const DEFAULT_NEARBY_RADIUS_MILES = 5;
+const DEFAULT_NEARBY_RADIUS_MILES = 0.25;
+const MILES_TO_METERS = 1609.34;
 
 
 
@@ -95,6 +96,7 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
   const mapElementRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const userMarkerRef = useRef<google.maps.Marker | null>(null);
+  const userRadiusCircleRef = useRef<google.maps.Circle | null>(null);
   const restroomMarkersRef = useRef<google.maps.Marker[]>([]);
   const selectedRestroomMarkerRef = useRef<google.maps.Marker | null>(null);
   const pedestrianSignalMarkersRef = useRef<google.maps.Marker[]>([]);
@@ -192,9 +194,45 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
         userMarkerRef.current.setPosition(location);
         userMarkerRef.current.setTitle(title);
       }
+
+      if (!userRadiusCircleRef.current) {
+        userRadiusCircleRef.current = new window.google.maps.Circle({
+          map,
+          strokeColor: "#0b0b0b",
+          strokeOpacity: 0.8,
+          strokeWeight: 2,
+          fillColor: "#de672c",
+          fillOpacity: 0.12,
+        });
+      }
+
+      userRadiusCircleRef.current.setMap(map);
+      userRadiusCircleRef.current.setCenter(location);
+      userRadiusCircleRef.current.setRadius(radiusMiles * MILES_TO_METERS);
     },
-    [],
+    [radiusMiles],
   );
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const markerPosition = userMarkerRef.current?.getPosition();
+    if (!map || !markerPosition) return;
+
+    if (!userRadiusCircleRef.current) {
+      userRadiusCircleRef.current = new window.google.maps.Circle({
+        map,
+        strokeColor: "#0b0b0b",
+        strokeOpacity: 0.8,
+        strokeWeight: 2,
+        fillColor: "#de672c",
+        fillOpacity: 0.12,
+      });
+    }
+
+    userRadiusCircleRef.current.setMap(map);
+    userRadiusCircleRef.current.setCenter(markerPosition);
+    userRadiusCircleRef.current.setRadius(radiusMiles * MILES_TO_METERS);
+  }, [radiusMiles]);
 
   const centerLocationOnLeftSide = useCallback((location: SelectedLocation) => {
     const map = mapRef.current;
@@ -764,9 +802,9 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
             <input
               id="radius-miles"
               type="range"
-              min={1}
+              min={0.25}
               max={10}
-              step={1}
+              step={0.25}
               value={radiusMiles}
               onChange={(event) => setRadiusMiles(Number(event.target.value))}
               className="w-full"
