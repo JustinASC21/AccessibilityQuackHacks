@@ -193,6 +193,47 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
     [],
   );
 
+  const centerLocationOnLeftSide = useCallback((location: SelectedLocation) => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const projection = map.getProjection();
+    const center = map.getCenter();
+    const mapDiv = map.getDiv();
+    const zoom = map.getZoom();
+
+    if (!projection || !center || typeof zoom !== "number") {
+      map.panTo(location);
+      return;
+    }
+
+    const locationPoint = projection.fromLatLngToPoint(
+      new window.google.maps.LatLng(location.lat, location.lng),
+    );
+    const centerPoint = projection.fromLatLngToPoint(center);
+
+    if (!locationPoint || !centerPoint) {
+      map.panTo(location);
+      return;
+    }
+
+    const desiredX = mapDiv.clientWidth * 0.28;
+    const currentCenterX = mapDiv.clientWidth / 2;
+    const deltaWorldX = (desiredX - currentCenterX) / 2 ** zoom;
+
+    const nextCenterPoint = new window.google.maps.Point(
+      locationPoint.x - deltaWorldX,
+      locationPoint.y,
+    );
+    const nextCenter = projection.fromPointToLatLng(nextCenterPoint);
+    if (!nextCenter) {
+      map.panTo(location);
+      return;
+    }
+
+    map.panTo(nextCenter);
+  }, []);
+
   const fetchNearbyRestrooms = useCallback(
     async (origin: SelectedLocation) => {
       const map = mapRef.current;
@@ -274,6 +315,19 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
         
         // ── Open panel when a blue circle is clicked ─────────────────────────
         marker.addListener("click", () => {
+          centerLocationOnLeftSide(restroom.position);
+
+          if (selectedCrosswalkMarkerRef.current) {
+            selectedCrosswalkMarkerRef.current.setIcon({
+              url: "/images/crosswalk67.png",
+              scaledSize: new window.google.maps.Size(40, 40),
+              anchor: new window.google.maps.Point(14, 14),
+            });
+            selectedCrosswalkMarkerRef.current.setZIndex(1);
+            selectedCrosswalkMarkerRef.current.setAnimation(null);
+            selectedCrosswalkMarkerRef.current = null;
+          }
+
           setOpenPanel({
             name: restroom.facilityName ?? "Public Restroom",
             address: details || "New York, NY",
@@ -309,7 +363,7 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
             : "Loaded 0 restrooms from Supabase.",
       );
     },
-    [clearRestroomMarkers, getNumericValue, getStringValue],
+    [centerLocationOnLeftSide, clearRestroomMarkers, getNumericValue, getStringValue],
   );
 
   useEffect(() => {
@@ -416,6 +470,19 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
         });
 
         marker.addListener("click", () => {
+          centerLocationOnLeftSide(signal.position);
+
+          if (selectedRestroomMarkerRef.current) {
+            selectedRestroomMarkerRef.current.setIcon({
+              url: "/images/toilet.png",
+              scaledSize: new window.google.maps.Size(40, 40),
+              anchor: new window.google.maps.Point(14, 14),
+            });
+            selectedRestroomMarkerRef.current.setZIndex(1);
+            selectedRestroomMarkerRef.current.setAnimation(null);
+            selectedRestroomMarkerRef.current = null;
+          }
+
           setOpenPanel({
             name: "Pedestrian Signal",
             address: signal.boroName
@@ -452,6 +519,7 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
       }
     },
     [
+      centerLocationOnLeftSide,
       clearPedestrianSignalMarkers,
       distanceInMiles,
       getNumericValue,
@@ -658,10 +726,10 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
       <div ref={mapElementRef} className="h-full w-full" />
 
       {/* Search bar */}
-      <div className="pointer-events-none absolute left-0 right-0 top-14 z-10 p-4 md:p-6">
+      <div className="pointer-events-none w-full absolute left-0 right-0 top-14 z-10 p-4 md:p-6">
         <form
           onSubmit={handleSearch}
-          className="pointer-events-auto mx-auto flex w-full max-w-2xl gap-2 rounded-md bg-background/95 p-2 shadow"
+          className="pointer-events-auto mr-auto flex w-full max-w-3xl gap-2 rounded-md bg-background/95 p-2 shadow"
         >
           <Input
             value={search}
@@ -672,9 +740,10 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
             }}
             placeholder="Search a place"
             aria-label="Search a place"
+            className="text-md"
           />
-          <Button type="submit">Search</Button>
-          <Button type="button" variant="outline" onClick={requestLocation}>
+          <Button type="submit" className = "text-lg">Search</Button>
+          <Button type="button" className = "text-lg" variant="outline" onClick={requestLocation}>
             Use My Location
           </Button>
           <div className="flex-shrink-0">
@@ -683,13 +752,13 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
         </form>
 
         {suggestions.length > 0 && (
-          <div className="pointer-events-auto mx-auto mt-2 w-full max-w-2xl overflow-hidden rounded-md border bg-background shadow">
+          <div className="pointer-events-auto mr-auto mt-2 w-full max-w-3xl overflow-hidden rounded-md border bg-background shadow">
             {suggestions.map((prediction) => (
               <button
                 key={prediction.place_id}
                 type="button"
                 onClick={() => applySelectedLocation(prediction.description)}
-                className="block w-full border-b px-3 py-2 text-left text-sm hover:bg-accent last:border-b-0"
+                className="block w-full border-b px-3 py-2 text-left text-md hover:bg-accent last:border-b-0"
               >
                 {prediction.description}
               </button>
@@ -705,17 +774,17 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
                 setIsRestroomListOpen((previous) => !previous);
               }
             }}
-            className="pointer-events-auto mx-auto mt-2 block w-full max-w-2xl rounded-md bg-background/95 px-3 py-2 text-left text-sm shadow"
+            className="pointer-events-auto mr-auto mt-2 block w-full max-w-3xl rounded-md bg-background/95 px-3 py-2 text-left text-md shadow"
           >
             {status}
           </button>
         )}
 
         {isRestroomListOpen && nearbyRestrooms.length > 0 && (
-          <div className="pointer-events-auto mx-auto mt-2 max-h-64 w-full max-w-2xl overflow-y-auto rounded-md bg-background/95 p-3 text-sm shadow">
+          <div className="pointer-events-auto mr-auto mt-2 max-h-64 w-full max-w-3xl overflow-y-auto rounded-md bg-background/95 p-3 text-sm shadow">
             <ul className="space-y-2">
               {nearbyRestrooms.map((restroom, index) => (
-                <li key={`${restroom.facilityName}-${index}`} className="rounded border px-3 py-2">
+                <li key={`${restroom.facilityName}-${index}`} className="rounded text-lg border px-3 py-2">
                   <p className="font-medium">{restroom.facilityName}</p>
                   <p>Status: {restroom.facilityStatus ?? "Unknown"}</p>
                   <p>Accessibility: {restroom.facilityAccessibility ?? "Unknown"}</p>
