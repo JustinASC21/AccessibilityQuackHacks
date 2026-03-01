@@ -141,7 +141,7 @@ If any API keys are ever pushed to version control or shared publicly:
 4. Consider using [git-secrets](https://github.com/awslabs/git-secrets) or similar tools to prevent future leaks
 
 ## Artificial Intelligence Use
-Artifical Intelligence was used to prepare frontend templates.
+Artifical Intelligence was used to prepare frontend templates and speed up debbuging process.
 
 ## License
 
