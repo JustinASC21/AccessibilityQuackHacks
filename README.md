@@ -1,6 +1,10 @@
-# Accessibility Quack Hacks
+# AXXEY: A public accessibility awareness app
 
 A Next.js + Supabase app with an auth-gated landing experience and an interactive full-screen Google Map for discovering accessible locations in NYC.
+
+## Team
+
+Amy Arias, Noor Kanaan, Justin Lema, Raynelis Villa
 
 ## Current app progress
 
