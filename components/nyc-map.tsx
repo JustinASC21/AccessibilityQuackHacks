@@ -12,7 +12,10 @@ import FilterWrapper from "./filter-wrapper";
 const SCRIPT_ID = "google-maps-script";
 const NYC_CENTER = { lat: 40.7128, lng: -74.006 };
 const NEARBY_RADIUS_MILES = 5;
-const RESTROOM_MARKER_COLOR = "#7dd3fc";
+
+
+
+const PEDESTRIAN_SIGNALS_STORAGE_KEY = "pedestrian-signals-rows-v1";
 const MAP_STYLES: google.maps.MapTypeStyle[] = [
   {
     "featureType": "water",
@@ -60,12 +63,19 @@ const MAP_STYLES: google.maps.MapTypeStyle[] = [
 ];
 
 type RestroomRow = Record<string, unknown>;
+type PedestrianSignalRow = Record<string, unknown>;
 
 type NearbyRestroom = {
   position: { lat: number; lng: number };
   facilityName: string;
   facilityStatus: string | null;
   facilityAccessibility: string | null;
+};
+
+type NearbyPedestrianSignal = {
+  boroName: string | null;
+  locationText: string;
+  position: { lat: number; lng: number };
 };
 
 type NycMapProps = {
@@ -84,6 +94,10 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
   const mapRef = useRef<google.maps.Map | null>(null);
   const userMarkerRef = useRef<google.maps.Marker | null>(null);
   const restroomMarkersRef = useRef<google.maps.Marker[]>([]);
+  const selectedRestroomMarkerRef = useRef<google.maps.Marker | null>(null);
+  const pedestrianSignalMarkersRef = useRef<google.maps.Marker[]>([]);
+  const selectedCrosswalkMarkerRef = useRef<google.maps.Marker | null>(null);
+  const pedestrianSignalsCacheRef = useRef<PedestrianSignalRow[] | null>(null);
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
   const autocompleteServiceRef = useRef<google.maps.places.AutocompleteService | null>(null);
 
@@ -91,6 +105,7 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
   const [suggestions, setSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([]);
   const [status, setStatus] = useState<string | null>(null);
   const [nearbyRestrooms, setNearbyRestrooms] = useState<NearbyRestroom[]>([]);
+  const [nearbyPedestrianSignals, setNearbyPedestrianSignals] = useState<NearbyPedestrianSignal[]>([]);
   const [isRestroomListOpen, setIsRestroomListOpen] = useState(false);
 
   // ── Panel state ──────────────────────────────────────────────────────────────
@@ -99,6 +114,7 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
   // ── Filters ─────────────────────────────────────────────────────────────────
   const { selectedFilters } = useSelectedLocation();
   const showBathrooms = selectedFilters.includes("Bathrooms");
+  const showCrosswalks = selectedFilters.includes("Crosswalks");
 
   const getValueByKeys = useCallback((row: RestroomRow, keys: string[]) => {
     const normalizedKeys = keys.map((key) => key.trim().toLowerCase());
@@ -130,7 +146,7 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
     [getValueByKeys],
   );
 
-  const distanceInMiles = (a: SelectedLocation, b: SelectedLocation) => {
+  const distanceInMiles = useCallback((a: SelectedLocation, b: SelectedLocation) => {
     const toRadians = (v: number) => (v * Math.PI) / 180;
     const R = 3958.8;
     const dLat = toRadians(b.lat - a.lat);
@@ -139,11 +155,26 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
       Math.sin(dLat / 2) ** 2 +
       Math.cos(toRadians(a.lat)) * Math.cos(toRadians(b.lat)) * Math.sin(dLng / 2) ** 2;
     return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
-  };
+  }, []);
 
   const clearRestroomMarkers = useCallback(() => {
     restroomMarkersRef.current.forEach((m) => m.setMap(null));
     restroomMarkersRef.current = [];
+    selectedRestroomMarkerRef.current = null;
+  }, []);
+
+  const clearPedestrianSignalMarkers = useCallback(() => {
+    pedestrianSignalMarkersRef.current.forEach((marker) => marker.setMap(null));
+    pedestrianSignalMarkersRef.current = [];
+    selectedCrosswalkMarkerRef.current = null;
+  }, []);
+
+  const persistPedestrianSignalsRows = useCallback((rows: PedestrianSignalRow[]) => {
+    try {
+      window.localStorage.setItem(PEDESTRIAN_SIGNALS_STORAGE_KEY, JSON.stringify(rows));
+    } catch {
+      // Ignore localStorage write failures
+    }
   }, []);
 
   const setMarkerAndCenter = useCallback(
@@ -214,36 +245,56 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
       setNearbyRestrooms(nearbyRestrooms);
       setIsRestroomListOpen(false);
 
+      const RESTROOM_ICON_DEFAULT: google.maps.Icon = {
+        url: "/images/toilet.png",
+        scaledSize: new google.maps.Size(40, 40),
+        anchor: new google.maps.Point(14, 14),
+      };
+      const RESTROOM_ICON_SELECTED: google.maps.Icon = {
+        url: "/images/toiletSelect.png",
+        scaledSize: new google.maps.Size(48, 48), // bigger = highlighted
+        anchor: new google.maps.Point(18, 18),
+      };
       nearbyRestrooms.forEach((restroom) => {
         const marker = new window.google.maps.Marker({
           map,
           position: restroom.position,
           title: restroom.facilityName ?? undefined,
-          icon: {
-            path: window.google.maps.SymbolPath.CIRCLE,
-            fillColor: RESTROOM_MARKER_COLOR,
-            fillOpacity: 1,
-            strokeColor: "#0f172a",
-            strokeWeight: 1,
-            scale: 15,
-          },
+          icon: RESTROOM_ICON_DEFAULT
         });
-
+        
         const details = [restroom.facilityStatus, restroom.facilityAccessibility]
-          .filter(Boolean)
-          .join(" • ");
-
+        .filter(Boolean)
+        .join(" • ");
+        
         if (restroom.facilityStatus || restroom.facilityAccessibility) {
           marker.setLabel({ text: "R", color: "#0f172a", fontWeight: "700" });
           marker.setTitle(`${restroom.facilityName}${details ? ` (${details})` : ""}`);
         }
-
+        
         // ── Open panel when a blue circle is clicked ─────────────────────────
         marker.addListener("click", () => {
           setOpenPanel({
             name: restroom.facilityName ?? "Public Restroom",
             address: details || "New York, NY",
           });
+
+           // reset previous selected marker
+          if (selectedRestroomMarkerRef.current) {
+            selectedRestroomMarkerRef.current.setIcon(RESTROOM_ICON_DEFAULT);
+            selectedRestroomMarkerRef.current.setZIndex(1);
+            selectedRestroomMarkerRef.current.setAnimation(null);
+          }
+
+          // set current marker as selected
+          marker.setIcon(RESTROOM_ICON_SELECTED);
+          marker.setZIndex(999);
+          marker.setAnimation(window.google.maps.Animation.BOUNCE);
+
+          // stop bounce after short pulse
+          window.setTimeout(() => marker.setAnimation(null), 700);
+
+          selectedRestroomMarkerRef.current = marker;
         });
 
         restroomMarkersRef.current.push(marker);
@@ -259,6 +310,155 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
       );
     },
     [clearRestroomMarkers, getNumericValue, getStringValue],
+  );
+
+  useEffect(() => {
+    try {
+      const cachedRows = window.localStorage.getItem(PEDESTRIAN_SIGNALS_STORAGE_KEY);
+      if (cachedRows) {
+        const parsed = JSON.parse(cachedRows);
+        if (Array.isArray(parsed)) {
+          pedestrianSignalsCacheRef.current = parsed as PedestrianSignalRow[];
+        }
+      }
+    } catch {
+      pedestrianSignalsCacheRef.current = null;
+    }
+  }, []);
+
+  const fetchNearbyPedestrianSignals = useCallback(
+    async (origin: SelectedLocation) => {
+      const map = mapRef.current;
+      if (!map) return;
+
+      clearPedestrianSignalMarkers();
+
+      let rows = pedestrianSignalsCacheRef.current;
+
+      if (!rows) {
+        try {
+          const cachedRows = window.localStorage.getItem(PEDESTRIAN_SIGNALS_STORAGE_KEY);
+          if (cachedRows) {
+            const parsed = JSON.parse(cachedRows);
+            if (Array.isArray(parsed)) {
+              rows = parsed as PedestrianSignalRow[];
+              pedestrianSignalsCacheRef.current = rows;
+            }
+          }
+        } catch {
+          rows = null;
+        }
+      }
+
+      if (!rows) {
+        const supabase = createClient();
+        const { data, error } = await supabase.from("pedestrian_signals").select("*");
+        
+        console.log(data);
+        if (error) {
+          setNearbyPedestrianSignals([]);
+          setStatus(`Could not load pedestrian signals: ${error.message}`);
+          return;
+        }
+
+        rows = (data ?? []) as PedestrianSignalRow[];
+        pedestrianSignalsCacheRef.current = rows;
+        persistPedestrianSignalsRows(rows);
+      }
+
+      const nearbySignals: NearbyPedestrianSignal[] = [];
+
+      for (const row of rows) {
+        const boroName = getStringValue(row, ["Borough", "borough", "BoroName", "boro_name", "boro"]);
+        const locationText = getStringValue(row, ["Location", "location"]);
+        if (!locationText) {
+          continue;
+        }
+
+        const latFromRow = getNumericValue(row, ["Latitude", "latitude", "Latitute", "lat"]);
+        const lngFromRow = getNumericValue(row, ["Longitude", "longitude", "lng", "lon"]);
+
+        if (latFromRow === null || lngFromRow === null) {
+          continue;
+        }
+
+        const position = { lat: latFromRow, lng: lngFromRow };
+
+        const distance = distanceInMiles(origin, position);
+        if (distance > NEARBY_RADIUS_MILES) {
+          continue;
+        }
+
+        nearbySignals.push({ boroName, locationText, position });
+      }
+
+      setNearbyPedestrianSignals(nearbySignals);
+
+      const CROSSWALK_ICON_DEFAULT: google.maps.Icon = {
+        url: "/images/crosswalk67.png",
+        scaledSize: new google.maps.Size(40, 40),
+        anchor: new google.maps.Point(14, 14),
+      };
+      const CROSSWALK_ICON_SELECTED: google.maps.Icon = {
+        url: "/images/crosswalk67Select.png",
+        scaledSize: new google.maps.Size(48, 48), // bigger = highlighted
+        anchor: new google.maps.Point(18, 18),
+      };
+
+      nearbySignals.forEach((signal) => {
+        const marker = new window.google.maps.Marker({
+          map,
+          position: signal.position,
+          title: signal.boroName
+            ? `${signal.locationText} (${signal.boroName})`
+            : signal.locationText,
+          icon: CROSSWALK_ICON_DEFAULT
+        });
+
+        marker.addListener("click", () => {
+          setOpenPanel({
+            name: "Pedestrian Signal",
+            address: signal.boroName
+              ? `${signal.locationText}, ${signal.boroName}`
+              : signal.locationText,
+          });
+          // reset previous selected marker
+          if (selectedCrosswalkMarkerRef.current) {
+            selectedCrosswalkMarkerRef.current.setIcon(CROSSWALK_ICON_DEFAULT);
+            selectedCrosswalkMarkerRef.current.setZIndex(1);
+            selectedCrosswalkMarkerRef.current.setAnimation(null);
+          }
+
+          // set current marker as selected
+          marker.setIcon(CROSSWALK_ICON_SELECTED);
+          marker.setZIndex(999);
+          marker.setAnimation(window.google.maps.Animation.BOUNCE);
+
+          // stop bounce after short pulse
+          window.setTimeout(() => marker.setAnimation(null), 700);
+
+          selectedCrosswalkMarkerRef.current = marker;
+        });
+
+        pedestrianSignalMarkersRef.current.push(marker);
+      });
+
+      if (!showBathrooms) {
+        setStatus(
+          nearbySignals.length
+            ? `Found ${nearbySignals.length} crosswalk signals within ${NEARBY_RADIUS_MILES} miles.`
+            : `No crosswalk signals found within ${NEARBY_RADIUS_MILES} miles.`,
+        );
+      }
+    },
+    [
+      clearPedestrianSignalMarkers,
+      distanceInMiles,
+      getNumericValue,
+      getStringValue,
+      persistPedestrianSignalsRows,
+      showBathrooms,
+    ],
   );
 
   const requestLocation = useCallback(() => {
@@ -282,22 +482,67 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
         setStatus("Showing your current location.");
         setSearch("");
         if (showBathrooms) void fetchNearbyRestrooms(userLocation);
+        if (showCrosswalks) void fetchNearbyPedestrianSignals(userLocation);
       },
-      () => setStatus("Location permission denied. Showing NYC default."),
+      () => {
+        const fallbackLocation = { lat: NYC_CENTER.lat, lng: NYC_CENTER.lng };
+        setMarkerAndCenter(fallbackLocation, "NYC", 12);
+        onLocationChange?.({ ...fallbackLocation, label: "New York, NY" });
+        setSearch("New York, NY");
+        setStatus("Location permission denied. Showing NYC default.");
+        if (showBathrooms) void fetchNearbyRestrooms(fallbackLocation);
+        if (showCrosswalks) void fetchNearbyPedestrianSignals(fallbackLocation);
+      },
       { enableHighAccuracy: true, timeout: 10000 },
     );
-  }, [fetchNearbyRestrooms, onLocationChange, setMarkerAndCenter, showBathrooms]);
+  }, [
+    fetchNearbyPedestrianSignals,
+    fetchNearbyRestrooms,
+    onLocationChange,
+    setMarkerAndCenter,
+    showBathrooms,
+    showCrosswalks,
+  ]);
 
   useEffect(() => {
     if (!mapRef.current) return;
+    const position = userMarkerRef.current?.getPosition();
+    const origin =
+      position
+        ? { lat: position.lat(), lng: position.lng() }
+        : selectedLocation ?? { lat: NYC_CENTER.lat, lng: NYC_CENTER.lng };
+
     if (showBathrooms) {
-      const pos = userMarkerRef.current?.getPosition();
-      if (pos) void fetchNearbyRestrooms({ lat: pos.lat(), lng: pos.lng() });
+      if (origin) {
+        void fetchNearbyRestrooms(origin);
+      }
     } else {
       clearRestroomMarkers();
+      setNearbyRestrooms([]);
+      setIsRestroomListOpen(false);
+    }
+
+    if (showCrosswalks) {
+      if (origin) {
+        void fetchNearbyPedestrianSignals(origin);
+      }
+    } else {
+      clearPedestrianSignalMarkers();
+      setNearbyPedestrianSignals([]);
+    }
+
+    if (!showBathrooms && !showCrosswalks) {
       setStatus(null);
     }
-  }, [showBathrooms, fetchNearbyRestrooms, clearRestroomMarkers]);
+  }, [
+    clearRestroomMarkers,
+    clearPedestrianSignalMarkers,
+    fetchNearbyPedestrianSignals,
+    fetchNearbyRestrooms,
+    selectedLocation,
+    showBathrooms,
+    showCrosswalks,
+  ]);
 
   useEffect(() => {
     if (!apiKey) {
@@ -373,6 +618,10 @@ export function NycMap({ selectedLocation, onLocationChange }: NycMapProps) {
         void fetchNearbyRestrooms(nextLocation);
       } else {
         setStatus(`Showing: ${results[0].formatted_address}.`);
+      }
+
+      if (showCrosswalks) {
+        void fetchNearbyPedestrianSignals(nextLocation);
       }
     });
   };
