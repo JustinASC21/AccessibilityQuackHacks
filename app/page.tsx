@@ -1,4 +1,4 @@
-import { AuthLandingModal } from "../components/auth-landing-modal";
+import { AxxeyLandingPage } from "@/components/axxey-landing-page";
 import { HomeMapClient } from "@/components/home-map-client";
 import { LogoutButton } from "@/components/logout-button";
 import { createClient } from "@/lib/supabase/server";
@@ -11,7 +11,7 @@ async function HomeContent() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return <AuthLandingModal />;
+    return <AxxeyLandingPage />;
   }
 
   return (
