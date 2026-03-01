@@ -66,8 +66,10 @@ export function AuthLandingModal() {
   };
 
   return (
-    <main className="min-h-screen w-full flex items-center justify-center p-6 md:p-10">
-      <Card className="w-full max-w-md">
+    <main className="min-h-screen w-full flex items-center justify-center bg-white p-6 md:p-10">
+      <div className="flex w-full max-w-md flex-col items-center gap-4">
+        <h1 className="text-3xl font-extrabold tracking-wide text-zinc-900">AXXEY</h1>
+        <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>{mode === "sign-in" ? "Sign in" : "Sign up"}</CardTitle>
           <div className="grid grid-cols-2 gap-2 pt-2">
@@ -139,7 +141,8 @@ export function AuthLandingModal() {
             </Button>
           </form>
         </CardContent>
-      </Card>
+        </Card>
+      </div>
     </main>
   );
 }
