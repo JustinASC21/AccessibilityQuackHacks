@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+const LOCATION_REVIEWS_STORAGE_KEY = "location-reviews-v1";
 
 // ─── Hardcoded Reviews ────────────────────────────────────────────────────────
 const REVIEWS = [
@@ -61,6 +63,23 @@ const REVIEWS = [
   },
 ];
 
+type ReviewCard = {
+  id: number;
+  author: string;
+  avatar: string;
+  date: string;
+  comfort: number;
+  stars: number;
+  comment: string;
+  tags: string[];
+};
+
+type StoredReview = {
+  id: number;
+  text: string;
+  createdAt: string;
+};
+
 // ─── Star display ─────────────────────────────────────────────────────────────
 function Stars({ count, max = 5 }: { count: number; max?: number }) {
   return (
@@ -98,27 +117,29 @@ function ComfortBadge({ score }: { score: number }) {
 }
 
 // ─── Average stars ────────────────────────────────────────────────────────────
-function avgStars() {
-  return (REVIEWS.reduce((s, r) => s + r.stars, 0) / REVIEWS.length).toFixed(1);
+function avgStars(reviews: ReviewCard[]) {
+  if (!reviews.length) return "0.0";
+  return (reviews.reduce((sum, review) => sum + review.stars, 0) / reviews.length).toFixed(1);
 }
-function avgComfort() {
-  return (REVIEWS.reduce((s, r) => s + r.comfort, 0) / REVIEWS.length).toFixed(1);
+function avgComfort(reviews: ReviewCard[]) {
+  if (!reviews.length) return "0.0";
+  return (reviews.reduce((sum, review) => sum + review.comfort, 0) / reviews.length).toFixed(1);
 }
 
 // ─── Reviews Tab ─────────────────────────────────────────────────────────────
-function ReviewsTab() {
+function ReviewsTab({ reviews }: { reviews: ReviewCard[] }) {
   return (
     <div className="flex flex-col gap-0">
       {/* Summary strip */}
       <div className="flex items-center gap-6 px-5 py-4 bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-100 dark:border-zinc-800">
         <div className="text-center">
-          <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 leading-none">{avgStars()}</p>
-          <Stars count={Math.round(Number(avgStars()))} />
-          <p className="text-[10px] text-zinc-400 mt-0.5">{REVIEWS.length} reviews</p>
+          <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 leading-none">{avgStars(reviews)}</p>
+          <Stars count={Math.round(Number(avgStars(reviews)))} />
+          <p className="text-[10px] text-zinc-400 mt-0.5">{reviews.length} reviews</p>
         </div>
         <div className="w-px h-10 bg-zinc-200 dark:bg-zinc-700" />
         <div className="text-center">
-          <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 leading-none">{avgComfort()}</p>
+          <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 leading-none">{avgComfort(reviews)}</p>
           <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1">avg comfort</p>
           <p className="text-[10px] text-zinc-400">out of 5</p>
         </div>
@@ -126,7 +147,7 @@ function ReviewsTab() {
 
       {/* Review cards */}
       <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-        {REVIEWS.map((review) => (
+        {reviews.map((review) => (
           <div key={review.id} className="px-5 py-4">
             {/* Row 1: avatar + name + date */}
             <div className="flex items-center justify-between mb-2">
@@ -170,15 +191,32 @@ function ReviewsTab() {
   );
 }
 
-// ─── Add Review Tab (placeholder) ────────────────────────────────────────────
-function AddReviewTab() {
+// ─── Add Review Tab ───────────────────────────────────────────────────────────
+function AddReviewTab({
+  reviewText,
+  onReviewTextChange,
+  onAddReview,
+}: {
+  reviewText: string;
+  onReviewTextChange: (next: string) => void;
+  onAddReview: () => void;
+}) {
   return (
-    <div className="flex flex-col items-center justify-center h-48 gap-3 text-zinc-400 dark:text-zinc-600">
-      <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-      </svg>
-      <p className="text-sm">Coming soon</p>
+    <div className="p-4 flex flex-col gap-3">
+      <textarea
+        value={reviewText}
+        onChange={(event) => onReviewTextChange(event.target.value)}
+        placeholder="Write your review..."
+        className="w-full min-h-28 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 text-sm outline-none focus:ring-2 focus:ring-sky-400"
+      />
+      <button
+        type="button"
+        onClick={onAddReview}
+        disabled={!reviewText.trim()}
+        className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40"
+      >
+        Add Review
+      </button>
     </div>
   );
 }
@@ -212,6 +250,59 @@ export function LocationDetailPanel({
   onClose,
 }: LocationDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>("reviews");
+  const [reviewText, setReviewText] = useState("");
+  const [reviewsByLocation, setReviewsByLocation] = useState<Record<string, StoredReview[]>>({});
+
+  const locationKey = `${locationName}__${address}`;
+
+  useEffect(() => {
+    try {
+      const stored = window.sessionStorage.getItem(LOCATION_REVIEWS_STORAGE_KEY);
+      if (!stored) return;
+      setReviewsByLocation(JSON.parse(stored) as Record<string, StoredReview[]>);
+    } catch {
+      setReviewsByLocation({});
+    }
+  }, []);
+
+  const locationStoredReviews = reviewsByLocation[locationKey] ?? [];
+
+  const mergedReviews: ReviewCard[] = [
+    ...REVIEWS,
+    ...locationStoredReviews.map((review) => ({
+      id: review.id,
+      author: "You",
+      avatar: "Y",
+      date: new Date(review.createdAt).toLocaleDateString(undefined, {
+        month: "short",
+        year: "numeric",
+      }),
+      comfort: 4,
+      stars: 4,
+      comment: review.text,
+      tags: ["User Review"],
+    })),
+  ];
+
+  const addReview = () => {
+    if (!reviewText.trim()) return;
+
+    const newReview: StoredReview = {
+      id: Date.now(),
+      text: reviewText.trim(),
+      createdAt: new Date().toISOString(),
+    };
+
+    const next = {
+      ...reviewsByLocation,
+      [locationKey]: [...locationStoredReviews, newReview],
+    };
+
+    setReviewsByLocation(next);
+    window.sessionStorage.setItem(LOCATION_REVIEWS_STORAGE_KEY, JSON.stringify(next));
+    setReviewText("");
+    setActiveTab("reviews");
+  };
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "reviews", label: "Reviews" },
@@ -277,8 +368,14 @@ export function LocationDetailPanel({
 
       {/* ── Content ── */}
       <div className="flex-1 overflow-y-auto">
-        {activeTab === "reviews" && <ReviewsTab />}
-        {activeTab === "add-review" && <AddReviewTab />}
+        {activeTab === "reviews" && <ReviewsTab reviews={mergedReviews} />}
+        {activeTab === "add-review" && (
+          <AddReviewTab
+            reviewText={reviewText}
+            onReviewTextChange={setReviewText}
+            onAddReview={addReview}
+          />
+        )}
         {activeTab === "service-request" && <ServiceRequestTab />}
       </div>
     </div>
